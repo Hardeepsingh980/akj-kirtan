@@ -25,6 +25,7 @@ dependencies:
   cupertino_icons: ^0.1.2
   audioplayers: 0.13.5
   http: 
+  flutter_media_notification:
 
 
 

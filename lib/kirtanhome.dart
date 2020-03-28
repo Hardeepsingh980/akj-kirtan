@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'package:akj/kirtanlist.dart';
-import 'package:akj/search.dart';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:akj/models.dart';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:audioplayers/audio_cache.dart';
+import 'package:http/http.dart';
+import 'package:flutter_media_notification/flutter_media_notification.dart';
 
 class KirtanHome extends StatefulWidget {
   @override
@@ -23,6 +24,7 @@ class _KirtanHomeState extends State<KirtanHome>
 
   Kirtan curPlaying;
   AudioPlayerState playerState = AudioPlayerState.PAUSED;
+  int curIndex;
 
   StreamSubscription durationSubscription;
   StreamSubscription positionSubscription;
@@ -37,7 +39,6 @@ class _KirtanHomeState extends State<KirtanHome>
   TabController _tabController;
 
   Future loadingKirtan;
-  Future searchLoadingKirtan;
 
   @override
   bool get wantKeepAlive => true;
@@ -46,13 +47,10 @@ class _KirtanHomeState extends State<KirtanHome>
   void initState() {
     super.initState();
 
-    _tabController = TabController(vsync: this, initialIndex: 1, length: 4);
+    _tabController = TabController(vsync: this, initialIndex: 0, length: 5);
 
     loadingKirtan =
-        fetchKirtan(http.Client(), 'https://akjm.herokuapp.com/api/kirtan/');
-
-    searchLoadingKirtan = fetchKirtan(http.Client(),
-        'https://akjm.herokuapp.com/api/kirtan/?search=${searchText.text}');
+        fetchKirtan(http.Client(), 'https://akjm.herokuapp.com/kirtan/latest/');
 
     initPlayer();
   }
@@ -63,6 +61,7 @@ class _KirtanHomeState extends State<KirtanHome>
 
     audioPlayerSubscription =
         advancedPlayer.onPlayerCompletion.listen((d) => setState(() {
+              MediaNotification.hideNotification();
               playerState = AudioPlayerState.PAUSED;
               duration = Duration(seconds: 0);
               position = Duration(seconds: 0);
@@ -78,6 +77,46 @@ class _KirtanHomeState extends State<KirtanHome>
         advancedPlayer.onAudioPositionChanged.listen((p) => setState(() {
               position = p;
             }));
+
+    MediaNotification.setListener('pause', () {
+      setState(() {
+        advancedPlayer.pause();
+        playerState = AudioPlayerState.PAUSED;
+      });
+    });
+
+    MediaNotification.setListener('play', () {
+      setState(() {
+        advancedPlayer.resume();
+        playerState = AudioPlayerState.PLAYING;
+      });
+    });
+
+    MediaNotification.setListener('next', () {
+      setState(() {
+        curPlaying = kirtan[curIndex + 1];
+        curIndex = curIndex + 1;
+        playerState = AudioPlayerState.PLAYING;
+        advancedPlayer.play(kirtan[curIndex + 1].url);
+        MediaNotification.showNotification(
+          title: curPlaying.artist.name,
+          author: curPlaying.smaagam.name,
+        );
+      });
+    });
+
+    MediaNotification.setListener('prev', () {
+      setState(() {
+        curPlaying = kirtan[curIndex - 1];
+        curIndex = curIndex - 1;
+        playerState = AudioPlayerState.PLAYING;
+        advancedPlayer.play(kirtan[curIndex + 1].url);
+        MediaNotification.showNotification(
+          title: curPlaying.artist.name,
+          author: curPlaying.smaagam.name,
+        );
+      });
+    });
   }
 
   void seekToSecond(int second, advancedPlayer) {
@@ -108,14 +147,15 @@ class _KirtanHomeState extends State<KirtanHome>
           controller: _tabController,
           indicatorColor: Colors.white,
           tabs: <Widget>[
-            Tab(icon: Text('LATEST')),
-            Tab(icon: Text('SEARCH')),
+            Tab(icon: Icon(Icons.new_releases)),
+            Tab(icon: Icon(Icons.search)),
             Tab(
-              icon: Text('FAVOURITE'),
+              icon: Icon(Icons.favorite),
             ),
             Tab(
-              icon: Text('HISTORY'),
-            )
+              icon: Icon(Icons.history),
+            ),
+            Tab(icon: Icon(Icons.file_download)),
           ],
         ),
       ),
@@ -144,9 +184,13 @@ class _KirtanHomeState extends State<KirtanHome>
                                     onTap: () {
                                       setState(() {
                                         curPlaying = kirtan[i];
-
+                                        curIndex = i;
                                         playerState = AudioPlayerState.PLAYING;
                                         advancedPlayer.play(kirtan[i].url);
+                                        MediaNotification.showNotification(
+                                          title: curPlaying.artist.name,
+                                          author: curPlaying.smaagam.name,
+                                        );
                                       });
                                     },
                                     trailing: Icon(Icons.favorite_border),
@@ -167,11 +211,23 @@ class _KirtanHomeState extends State<KirtanHome>
                         Padding(
                           padding: const EdgeInsets.all(8.0),
                           child: TextField(
-                            onSubmitted: (v) {
+                            onSubmitted: (v) async {
                               print('searching');
-                              setState(() {
-                                isSearch = true;
-                              });
+                              print(v);
+                              if (v != '') {
+                                final response = await get(
+                                    'https://akjm.herokuapp.com/api/kirtan/?search=${v}');
+                                final parsed = jsonDecode(response.body);
+                                print(parsed);
+                                setState(() {
+                                  searchkirtan = parsed
+                                      .map<Kirtan>(
+                                          (json) => Kirtan.fromJson(json))
+                                      .toList();
+                                });
+                              } else {
+                                searchkirtan = null;
+                              }
                             },
                             controller: searchText,
                             decoration: InputDecoration(
@@ -183,63 +239,53 @@ class _KirtanHomeState extends State<KirtanHome>
                                 hintText: 'Search ... '),
                           ),
                         ),
-                        isSearch
-                            ? FutureBuilder<List<Kirtan>>(
-                                future: searchLoadingKirtan,
-                                builder: (context, snapshot) {
-                                  if (snapshot.hasData) {
-                                    searchkirtan = snapshot.data;
-                                  }
-                                  return snapshot.hasData
-                                      ? ListView.builder(
-                                          physics:
-                                              NeverScrollableScrollPhysics(),
-                                          shrinkWrap: true,
-                                          scrollDirection: Axis.vertical,
-                                          itemCount: searchkirtan.length,
-                                          itemBuilder: (_, i) => Padding(
-                                            padding: const EdgeInsets.all(5.0),
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                              child: Container(
-                                                color: Colors.black,
-                                                child: ListTile(
-                                                  onTap: () {
-                                                    setState(() {
-                                                      curPlaying =
-                                                          searchkirtan[i];
+                        searchkirtan != null
+                            ? ListView.builder(
+                                physics: NeverScrollableScrollPhysics(),
+                                shrinkWrap: true,
+                                scrollDirection: Axis.vertical,
+                                itemCount: searchkirtan.length,
+                                itemBuilder: (_, i) => Padding(
+                                  padding: const EdgeInsets.all(5.0),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      color: Colors.black,
+                                      child: ListTile(
+                                        onTap: () {
+                                          setState(() {
+                                            curPlaying = searchkirtan[i];
 
-                                                      playerState =
-                                                          AudioPlayerState
-                                                              .PLAYING;
-                                                      advancedPlayer.play(
-                                                          searchkirtan[i].url);
-                                                    });
-                                                  },
-                                                  trailing: Icon(
-                                                      Icons.favorite_border),
-                                                  title: Text(searchkirtan[i]
-                                                      .artist
-                                                      .name),
-                                                  subtitle: Text(searchkirtan[i]
-                                                      .smaagam
-                                                      .name),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                      : Center(
-                                          child: CircularProgressIndicator());
-                                })
-                            : Center(child: Text('Search Kirtan')),
+                                            playerState =
+                                                AudioPlayerState.PLAYING;
+                                            advancedPlayer
+                                                .play(searchkirtan[i].url);
+                                            MediaNotification.showNotification(
+                                              title: curPlaying.artist.name,
+                                              author: curPlaying.smaagam.name,
+                                            );
+                                          });
+                                        },
+                                        trailing: Icon(Icons.favorite_border),
+                                        title:
+                                            Text(searchkirtan[i].artist.name),
+                                        subtitle:
+                                            Text(searchkirtan[i].smaagam.name),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Center(
+                                child:
+                                    Text('Search and wait for response ....')),
                       ],
                     ),
                   ),
                 ),
                 Text('Favourite'),
-                Text('History')
+                Text('History'),
+                Text('Downloaded'),
               ],
             ),
           ),
@@ -284,7 +330,23 @@ class _KirtanHomeState extends State<KirtanHome>
                           : '00:00'),
                       IconButton(
                         icon: Icon(Icons.skip_previous),
-                        onPressed: null,
+                        onPressed: curIndex != null
+                            ? curIndex - 1 >= 0
+                                ? () {
+                                    setState(() {
+                                      curPlaying = kirtan[curIndex - 1];
+                                      curIndex = curIndex - 1;
+                                      playerState = AudioPlayerState.PLAYING;
+                                      advancedPlayer
+                                          .play(kirtan[curIndex + 1].url);
+                                      MediaNotification.showNotification(
+                                        title: curPlaying.artist.name,
+                                        author: curPlaying.smaagam.name,
+                                      );
+                                    });
+                                  }
+                                : null
+                            : null,
                         iconSize: 40,
                       ),
                       IconButton(
@@ -298,19 +360,43 @@ class _KirtanHomeState extends State<KirtanHome>
                                     setState(() {
                                       advancedPlayer.resume();
                                       playerState = AudioPlayerState.PLAYING;
+                                      MediaNotification.showNotification(
+                                        title: curPlaying.artist.name,
+                                        author: curPlaying.smaagam.name,
+                                      );
                                     });
                                   }
                                 : () {
                                     setState(() {
                                       advancedPlayer.pause();
                                       playerState = AudioPlayerState.PAUSED;
+                                      MediaNotification.showNotification(
+                                          title: curPlaying.artist.name,
+                                          author: curPlaying.smaagam.name,
+                                          isPlaying: false);
                                     });
                                   },
                         iconSize: 40,
                       ),
                       IconButton(
                         icon: Icon(Icons.skip_next),
-                        onPressed: null,
+                        onPressed: curIndex != null
+                            ? curIndex + 1 < kirtan.length
+                                ? () {
+                                    setState(() {
+                                      curPlaying = kirtan[curIndex + 1];
+                                      curIndex = curIndex + 1;
+                                      playerState = AudioPlayerState.PLAYING;
+                                      advancedPlayer
+                                          .play(kirtan[curIndex + 1].url);
+                                      MediaNotification.showNotification(
+                                        title: curPlaying.artist.name,
+                                        author: curPlaying.smaagam.name,
+                                      );
+                                    });
+                                  }
+                                : null
+                            : null,
                         iconSize: 40,
                       ),
                       Text(duration != null
