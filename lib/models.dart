@@ -2,35 +2,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 
-class Smaagam {
-  final String name;
-
-  Smaagam({this.name});
-
-  factory Smaagam.fromJson(Map<String, dynamic> json) {
-    return Smaagam(
-      name: json['smaagam_name'].toString().replaceAll('Â', ''),
-    );
-  }
-
-}
-
-class Artist {
-  final String name;
-
-  Artist({this.name});
-
-  factory Artist.fromJson(Map<String, dynamic> json) {
-    return Artist(
-      name: json['artist_name'].toString().replaceAll('Â', ''),
-    );
-  }
-
-}
-
 class Kirtan {
-  final Smaagam smaagam;
-  final Artist artist;
+  final String smaagam;
+  final String artist;
   final String url;
 
   Kirtan({this.smaagam, this.artist, this.url});
@@ -38,9 +12,17 @@ class Kirtan {
   factory Kirtan.fromJson(Map<String, dynamic> json) {
     return Kirtan(
       url: json['url'],
-      smaagam:  Smaagam.fromJson(json['smaagam']),
-      artist: Artist.fromJson(json['artist'])
+      smaagam:  json['smaagam']['smaagam_name'].toString().replaceAll('Â', ''),
+      artist: json['artist']['artist_name'].toString().replaceAll('Â', ''),
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'smaagam': smaagam,
+      'artist': artist,
+      'url': url,
+    };
   }
 
 }
