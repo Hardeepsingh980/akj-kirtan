@@ -7,6 +7,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:audioplayers/audio_cache.dart';
 import 'package:http/http.dart';
 import 'package:flutter_media_notification/flutter_media_notification.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class KirtanHome extends StatefulWidget {
   @override
@@ -33,6 +34,10 @@ class _KirtanHomeState extends State<KirtanHome>
   List<Kirtan> kirtan;
   List<Kirtan> searchkirtan;
 
+  List<Kirtan> favKirtan = [];
+  List<String> favUrl = [];
+  SharedPreferences prefs;
+
   TextEditingController searchText = TextEditingController();
 
   TabController _tabController;
@@ -50,12 +55,25 @@ class _KirtanHomeState extends State<KirtanHome>
   void initState() {
     super.initState();
 
-    _tabController = TabController(vsync: this, initialIndex: 0, length: 5);
+    _tabController = TabController(vsync: this, initialIndex: 0, length: 4);
 
     loadingKirtan =
         fetchKirtan(http.Client(), 'https://akjm.herokuapp.com/kirtan/latest/');
 
     initPlayer();
+    initSharedPreferences();
+  }
+
+  initSharedPreferences() async {
+    prefs = await SharedPreferences.getInstance();
+    List l = prefs.getStringList('favourites');
+    List data = [];
+    l.forEach((f) => data.add(jsonDecode(f)));
+    favKirtan = data.map<Kirtan>((json) => Kirtan.fromJson(json)).toList();
+    setState(() {
+      favUrl = [];
+      favKirtan.forEach((f) => favUrl.add(f.url));
+    });
   }
 
   void initPlayer() {
@@ -152,7 +170,7 @@ class _KirtanHomeState extends State<KirtanHome>
     var searchResults =
         parsed.map<Kirtan>((json) => Kirtan.fromJson(json)).toList();
 
-    searchResults.forEach((Kirtan kirtan) async {
+    searchResults.forEach((Kirtan k) async {
       Widget searchItem = Padding(
         padding: const EdgeInsets.all(5.0),
         child: ClipRRect(
@@ -162,18 +180,38 @@ class _KirtanHomeState extends State<KirtanHome>
             child: ListTile(
               onTap: () {
                 setState(() {
-                  curPlaying = kirtan;
+                  curPlaying = k;
                   playerState = AudioPlayerState.PLAYING;
-                  advancedPlayer.play(kirtan.url);
+                  advancedPlayer.play(k.url);
                   MediaNotification.showNotification(
                     title: curPlaying.artist,
                     author: curPlaying.smaagam,
                   );
                 });
               },
-              trailing: Icon(Icons.favorite_border),
-              title: Text(kirtan.artist),
-              subtitle: Text(kirtan.smaagam),
+              trailing: favUrl.contains(k.url)
+                  ? IconButton(
+                      icon: Icon(Icons.favorite),
+                      onPressed: () {
+                        favKirtan.removeAt(favUrl.indexOf(k.url));
+
+                        List<String> list = [];
+                        favKirtan.forEach((f) => list.add(json.encode(f)));
+                        save(list);
+                      },
+                    )
+                  : IconButton(
+                      icon: Icon(Icons.favorite_border),
+                      onPressed: () {
+                        favKirtan.add(k);
+
+                        List<String> list = [];
+                        favKirtan.forEach((f) => list.add(json.encode(f)));
+                        save(list);
+                      },
+                    ),
+              title: Text(k.artist),
+              subtitle: Text(k.smaagam),
             ),
           ),
         ),
@@ -185,6 +223,14 @@ class _KirtanHomeState extends State<KirtanHome>
     return ListView(
       children: userSearchItems,
     );
+  }
+
+  save(List<String> value) async {
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setStringList('favourites', value);
+    setState(() {
+      initSharedPreferences();
+    });
   }
 
   void seekToSecond(int second, advancedPlayer) {
@@ -219,9 +265,6 @@ class _KirtanHomeState extends State<KirtanHome>
             Tab(icon: Icon(Icons.search)),
             Tab(
               icon: Icon(Icons.favorite),
-            ),
-            Tab(
-              icon: Icon(Icons.history),
             ),
             Tab(icon: Icon(Icons.file_download)),
           ],
@@ -261,7 +304,30 @@ class _KirtanHomeState extends State<KirtanHome>
                                         );
                                       });
                                     },
-                                    trailing: Icon(Icons.favorite_border),
+                                    trailing: favUrl.contains(kirtan[i].url)
+                                        ? IconButton(
+                                            icon: Icon(Icons.favorite),
+                                            onPressed: () {
+                                              favKirtan.removeAt(favUrl
+                                                  .indexOf(kirtan[i].url));
+
+                                              List<String> list = [];
+                                              favKirtan.forEach((f) =>
+                                                  list.add(json.encode(f)));
+                                              save(list);
+                                            },
+                                          )
+                                        : IconButton(
+                                            icon: Icon(Icons.favorite_border),
+                                            onPressed: () {
+                                              favKirtan.add(kirtan[i]);
+
+                                              List<String> list = [];
+                                              favKirtan.forEach((f) =>
+                                                  list.add(json.encode(f)));
+                                              save(list);
+                                            },
+                                          ),
                                     title: Text(kirtan[i].artist),
                                     subtitle: Text(kirtan[i].smaagam),
                                   ),
@@ -300,11 +366,14 @@ class _KirtanHomeState extends State<KirtanHome>
                     ],
                   ),
                   body: searchDocs == null
-                      ? Center(child: Text('Search for a relevent keyword ...'),)
+                      ? Center(
+                          child: Text('Search for a relevent keyword ...'),
+                        )
                       : FutureBuilder(
                           future: searchDocs,
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.done) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.done) {
                               return buildSearchResults(snapshot.data.body);
                             } else {
                               return Container(
@@ -313,9 +382,63 @@ class _KirtanHomeState extends State<KirtanHome>
                             }
                           }),
                 ),
-                Text('Favourite'),
-                Text('History'),
-                Text('Downloaded'),
+                favKirtan.length != 0
+                    ? ListView.builder(
+                        itemCount: favKirtan.length,
+                        itemBuilder: (_, i) => Padding(
+                          padding: const EdgeInsets.all(5.0),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              color: Colors.black,
+                              child: ListTile(
+                                onTap: () {
+                                  setState(() {
+                                    curPlaying = favKirtan[i];
+                                    curIndex = i;
+                                    playerState = AudioPlayerState.PLAYING;
+                                    advancedPlayer.play(favKirtan[i].url);
+                                    MediaNotification.showNotification(
+                                      title: curPlaying.artist,
+                                      author: curPlaying.smaagam,
+                                    );
+                                  });
+                                },
+                                trailing: favKirtan.contains(favKirtan[i])
+                                    ? IconButton(
+                                        icon: Icon(Icons.favorite),
+                                        onPressed: () {
+                                          favKirtan.removeAt(
+                                              favKirtan.indexOf(favKirtan[i]));
+
+                                          List<String> list = [];
+                                          favKirtan.forEach(
+                                              (f) => list.add(json.encode(f)));
+                                          save(list);
+                                        },
+                                      )
+                                    : IconButton(
+                                        icon: Icon(Icons.favorite_border),
+                                        onPressed: () {
+                                          favKirtan.add(favKirtan[i]);
+
+                                          List<String> list = [];
+                                          favKirtan.forEach(
+                                              (f) => list.add(json.encode(f)));
+                                          save(list);
+                                        },
+                                      ),
+                                title: Text(favKirtan[i].artist),
+                                subtitle: Text(favKirtan[i].smaagam),
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : Center(
+                        child: Text('Nothing In Favorites'),
+                      ),
+                Center(child: Text('Coming Soon ....')),
               ],
             ),
           ),

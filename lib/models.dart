@@ -12,27 +12,24 @@ class Kirtan {
   factory Kirtan.fromJson(Map<String, dynamic> json) {
     return Kirtan(
       url: json['url'],
-      smaagam:  json['smaagam']['smaagam_name'].toString().replaceAll('Â', ''),
+      smaagam: json['smaagam']['smaagam_name'].toString().replaceAll('Â', ''),
       artist: json['artist']['artist_name'].toString().replaceAll('Â', ''),
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
-      'smaagam': smaagam,
-      'artist': artist,
-      'url': url,
-    };
-  }
-
+  Map<String, dynamic> toJson() => {
+        'url': url,
+        'smaagam': {
+          'smaagam_name': smaagam,
+        },
+        'artist': {
+          'artist_name': artist,
+        },
+      };
 }
 
-
-
-
 Future<List<Kirtan>> fetchKirtan(http.Client client, String url) async {
-  final response = await client
-      .get(url);
+  final response = await client.get(url);
 
   // Use the compute function to run parsePhotos in a separate isolate.
   return compute(parseKirtan, response.body);
@@ -42,7 +39,5 @@ Future<List<Kirtan>> fetchKirtan(http.Client client, String url) async {
 List<Kirtan> parseKirtan(String responseBody) {
   final parsed = jsonDecode(responseBody).cast<Map<String, dynamic>>();
 
-  return parsed
-      .map<Kirtan>((json) => Kirtan.fromJson(json))
-      .toList();
+  return parsed.map<Kirtan>((json) => Kirtan.fromJson(json)).toList();
 }

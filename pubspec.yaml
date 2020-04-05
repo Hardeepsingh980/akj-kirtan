@@ -26,6 +26,7 @@ dependencies:
   audioplayers: 0.13.5
   http: 
   flutter_media_notification:
+  shared_preferences:
 
 
 
