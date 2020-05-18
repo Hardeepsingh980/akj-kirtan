@@ -2,7 +2,7 @@
 A Kirtan App which fetch data from akj.org. It have all the features that a basic music player have. Please check it once and share your feedback.
 
 ## Link to APIs Used
-The APIs used are created by it itself. These all open to community for use. They are available on https://akjm.herokuapp.com/.
+The APIs used are created by me itself. These all open to community for use. They are available on https://akjm.herokuapp.com/.
 
 ### Proper Documentation To the APIs is available at :- https://github.com/Hardeepsingh980/AKJ-APIs/blob/master/README.md
 
