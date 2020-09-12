@@ -6,14 +6,16 @@ class Kirtan {
   final String smaagam;
   final String artist;
   final String url;
+  final String duration;
 
-  Kirtan({this.smaagam, this.artist, this.url});
+  Kirtan({this.duration, this.smaagam, this.artist, this.url});
 
   factory Kirtan.fromJson(Map<String, dynamic> json) {
     return Kirtan(
       url: json['url'],
       smaagam: json['smaagam']['smaagam_name'].toString().replaceAll('Â', ''),
       artist: json['artist']['artist_name'].toString().replaceAll('Â', ''),
+      duration: json['duration'],
     );
   }
 
@@ -25,6 +27,7 @@ class Kirtan {
         'artist': {
           'artist_name': artist,
         },
+        'duration': duration
       };
 }
 
@@ -37,7 +40,7 @@ Future<List<Kirtan>> fetchKirtan(http.Client client, String url) async {
 
 // A function that converts a response body into a List<Photo>.
 List<Kirtan> parseKirtan(String responseBody) {
-  final parsed = jsonDecode(responseBody).cast<Map<String, dynamic>>();
+  final parsed = jsonDecode(responseBody)['results'];
 
   return parsed.map<Kirtan>((json) => Kirtan.fromJson(json)).toList();
 }

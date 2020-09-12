@@ -31,9 +31,11 @@ class _KirtanHomeState extends State<KirtanHome>
   StreamSubscription positionSubscription;
   StreamSubscription audioPlayerSubscription;
 
-  List<Kirtan> kirtan;
-  List<Kirtan> searchkirtan;
+  List<Kirtan> kirtan = [];
+  int curPage = 0;
+  ScrollController _sc = new ScrollController();
 
+  List<Kirtan> searchkirtan;
   List<Kirtan> favKirtan = [];
   List<String> favUrl = [];
   SharedPreferences prefs;
@@ -46,22 +48,45 @@ class _KirtanHomeState extends State<KirtanHome>
   Future searchDocs;
   bool isSearching = false;
 
-  String searchBy = 'Smaagam';
+  String searchBy = 'All';
 
   @override
   bool get wantKeepAlive => true;
+
+  Future<void> loadMoreKirtan() async {
+    curPage += 1;
+    final response = await http
+        .get('https://akjm.herokuapp.com/kirtan/latest/?page=$curPage');
+    setState(() {
+      kirtan += parseKirtan(response.body);
+    });
+  }
 
   @override
   void initState() {
     super.initState();
 
-    _tabController = TabController(vsync: this, initialIndex: 0, length: 4);
+    _tabController = TabController(vsync: this, initialIndex: 0, length: 3);
 
-    loadingKirtan =
-        fetchKirtan(http.Client(), 'https://akjm.herokuapp.com/kirtan/latest/');
+    loadMoreKirtan();
+
+    _sc.addListener(() {
+      if (_sc.position.pixels == _sc.position.maxScrollExtent) {
+        loadMoreKirtan();
+      }
+    });
 
     initPlayer();
     initSharedPreferences();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+
+    playerState = AudioPlayerState.STOPPED;
+    advancedPlayer.stop();
+    MediaNotification.hideNotification();
   }
 
   initSharedPreferences() async {
@@ -144,85 +169,104 @@ class _KirtanHomeState extends State<KirtanHome>
     var url;
     if (searchBy == 'Smaagam') {
       url = 'https://akjm.herokuapp.com/kirtan/smaagam/?search=$searchValue';
-    } else {
+    } else if (searchBy == 'All') {
+      url = 'https://akjm.herokuapp.com/api/kirtan/?search=$searchValue';
+    }
+     else {
       url = 'https://akjm.herokuapp.com/kirtan/artist/?search=$searchValue';
     }
 
-    print(url);
-
     var response = get(url);
-
-    print(response);
-
     setState(() {
       isSearching = false;
       searchDocs = response;
     });
   }
 
-  ListView buildSearchResults(docs) {
+  Widget buildSearchResults(docs) {
     List<Widget> userSearchItems = [];
 
-    var parsed = jsonDecode(docs);
+    var parsed = jsonDecode(docs)['results'];
 
-    parsed = parsed.reversed.toList();
-
-    var searchResults =
-        parsed.map<Kirtan>((json) => Kirtan.fromJson(json)).toList();
-
-    searchResults.forEach((Kirtan k) async {
-      Widget searchItem = Padding(
-        padding: const EdgeInsets.all(5.0),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            color: Colors.black,
-            child: ListTile(
-              onTap: () {
-                setState(() {
-                  curPlaying = k;
-                  playerState = AudioPlayerState.PLAYING;
-                  advancedPlayer.play(k.url);
-                  MediaNotification.showNotification(
-                    title: curPlaying.artist,
-                    author: curPlaying.smaagam,
-                  );
-                });
-              },
-              trailing: favUrl.contains(k.url)
-                  ? IconButton(
-                      icon: Icon(Icons.favorite),
-                      onPressed: () {
-                        favKirtan.removeAt(favUrl.indexOf(k.url));
-
-                        List<String> list = [];
-                        favKirtan.forEach((f) => list.add(json.encode(f)));
-                        save(list);
-                      },
-                    )
-                  : IconButton(
-                      icon: Icon(Icons.favorite_border),
-                      onPressed: () {
-                        favKirtan.add(k);
-
-                        List<String> list = [];
-                        favKirtan.forEach((f) => list.add(json.encode(f)));
-                        save(list);
-                      },
-                    ),
-              title: Text(k.artist),
-              subtitle: Text(k.smaagam),
-            ),
-          ),
+    if (parsed.length == 0) {
+      return Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Center(
+          child: Text(
+              'Search for relevent keyword.\nTip: Check if correct option is selected (Smaagam/Kirtaniya)'),
         ),
       );
+    } else {
+      var searchResults =
+          parsed.map<Kirtan>((json) => Kirtan.fromJson(json)).toList();
 
-      userSearchItems.add(searchItem);
-    });
+      searchResults.forEach((Kirtan k) async {
+        Widget searchItem = Padding(
+          padding: const EdgeInsets.all(5.0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              color: Colors.black,
+              child: ListTile(
+                onTap: () {
+                  setState(() {
+                    curPlaying = k;
+                    playerState = AudioPlayerState.PLAYING;
+                    advancedPlayer.play(k.url);
+                    MediaNotification.showNotification(
+                      title: curPlaying.artist,
+                      author: curPlaying.smaagam,
+                    );
+                  });
+                },
+                leading: CircleAvatar(
+                  child: Text(
+                    k.duration,
+                    textScaleFactor: 0.6,
+                  ),
+                ),
+                trailing: favUrl.contains(k.url)
+                    ? IconButton(
+                        icon: Icon(Icons.favorite),
+                        onPressed: () {
+                          favKirtan.removeAt(favUrl.indexOf(k.url));
 
-    return ListView(
-      children: userSearchItems,
-    );
+                          List<String> list = [];
+                          favKirtan.forEach((f) => list.add(json.encode(f)));
+                          save(list);
+                        },
+                      )
+                    : IconButton(
+                        icon: Icon(Icons.favorite_border),
+                        onPressed: () {
+                          favKirtan.add(k);
+
+                          List<String> list = [];
+                          favKirtan.forEach((f) => list.add(json.encode(f)));
+                          save(list);
+                        },
+                      ),
+                title: Text(
+                  k.artist,
+                  textScaleFactor: 0.8,
+                ),
+                subtitle: Text(
+                  k.smaagam,
+                  textScaleFactor: 0.8,
+                ),
+              ),
+            ),
+          ),
+        );
+
+        userSearchItems.add(searchItem);
+      });
+      return ListView(
+        children: userSearchItems,
+      );
+    }
+
+    // setState(() {});
   }
 
   save(List<String> value) async {
@@ -250,6 +294,76 @@ class _KirtanHomeState extends State<KirtanHome>
     return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
   }
 
+  Widget itemBuilder(BuildContext context, int i) {
+    return Padding(
+      padding: const EdgeInsets.all(5.0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          color: Colors.black,
+          child: ListTile(
+            onTap: () {
+              setState(() {
+                curPlaying = kirtan[i];
+                curIndex = i;
+                playerState = AudioPlayerState.PLAYING;
+                advancedPlayer.play(kirtan[i].url);
+                MediaNotification.showNotification(
+                  title: curPlaying.artist,
+                  author: curPlaying.smaagam,
+                );
+              });
+            },
+            leading: CircleAvatar(
+              child: Text(
+                kirtan[i].duration,
+                textScaleFactor: 0.6,
+              ),
+            ),
+            trailing: favUrl.contains(kirtan[i].url)
+                ? IconButton(
+                    icon: Icon(Icons.favorite),
+                    onPressed: () {
+                      favKirtan.removeAt(favUrl.indexOf(kirtan[i].url));
+
+                      List<String> list = [];
+                      favKirtan.forEach((f) => list.add(json.encode(f)));
+                      save(list);
+                    },
+                  )
+                : IconButton(
+                    icon: Icon(Icons.favorite_border),
+                    onPressed: () {
+                      favKirtan.add(kirtan[i]);
+
+                      List<String> list = [];
+                      favKirtan.forEach((f) => list.add(json.encode(f)));
+                      save(list);
+                    },
+                  ),
+            title: Text(
+              kirtan[i].artist,
+              textScaleFactor: 0.8,
+            ),
+            subtitle: Text(
+              kirtan[i].smaagam,
+              textScaleFactor: 0.8,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgressIndicator() {
+    return new Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: new Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -266,7 +380,6 @@ class _KirtanHomeState extends State<KirtanHome>
             Tab(
               icon: Icon(Icons.favorite),
             ),
-            Tab(icon: Icon(Icons.file_download)),
           ],
         ),
       ),
@@ -276,66 +389,16 @@ class _KirtanHomeState extends State<KirtanHome>
             child: TabBarView(
               controller: _tabController,
               children: <Widget>[
-                FutureBuilder<List<Kirtan>>(
-                  future: loadingKirtan,
-                  builder: (_, snapshot) {
-                    if (snapshot.hasData) {
-                      kirtan = snapshot.data;
+                ListView.builder(
+                  controller: _sc,
+                  itemCount: kirtan.length + 1,
+                  itemBuilder: (_, i) {
+                    if (i == kirtan.length) {
+                      return _buildProgressIndicator();
+                    } else {
+                      return itemBuilder(_, i);
+                      // Text(player.smaagam[index].name);
                     }
-                    return snapshot.hasData
-                        ? ListView.builder(
-                            itemCount: kirtan.length,
-                            itemBuilder: (_, i) => Padding(
-                              padding: const EdgeInsets.all(5.0),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  color: Colors.black,
-                                  child: ListTile(
-                                    onTap: () {
-                                      setState(() {
-                                        curPlaying = kirtan[i];
-                                        curIndex = i;
-                                        playerState = AudioPlayerState.PLAYING;
-                                        advancedPlayer.play(kirtan[i].url);
-                                        MediaNotification.showNotification(
-                                          title: curPlaying.artist,
-                                          author: curPlaying.smaagam,
-                                        );
-                                      });
-                                    },
-                                    trailing: favUrl.contains(kirtan[i].url)
-                                        ? IconButton(
-                                            icon: Icon(Icons.favorite),
-                                            onPressed: () {
-                                              favKirtan.removeAt(favUrl
-                                                  .indexOf(kirtan[i].url));
-
-                                              List<String> list = [];
-                                              favKirtan.forEach((f) =>
-                                                  list.add(json.encode(f)));
-                                              save(list);
-                                            },
-                                          )
-                                        : IconButton(
-                                            icon: Icon(Icons.favorite_border),
-                                            onPressed: () {
-                                              favKirtan.add(kirtan[i]);
-
-                                              List<String> list = [];
-                                              favKirtan.forEach((f) =>
-                                                  list.add(json.encode(f)));
-                                              save(list);
-                                            },
-                                          ),
-                                    title: Text(kirtan[i].artist),
-                                    subtitle: Text(kirtan[i].smaagam),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                        : Center(child: CircularProgressIndicator());
                   },
                 ),
                 Scaffold(
@@ -350,7 +413,7 @@ class _KirtanHomeState extends State<KirtanHome>
                     actions: <Widget>[
                       DropdownButton<String>(
                         value: searchBy,
-                        items: <String>['Smaagam', 'Kirtaaniya']
+                        items: <String>['All','Smaagam', 'Kirtaaniya']
                             .map((String value) {
                           return new DropdownMenuItem<String>(
                             value: value,
@@ -404,6 +467,12 @@ class _KirtanHomeState extends State<KirtanHome>
                                     );
                                   });
                                 },
+                                leading: CircleAvatar(
+                                  child: Text(
+                                    favKirtan[i].duration,
+                                    textScaleFactor: 0.6,
+                                  ),
+                                ),
                                 trailing: favKirtan.contains(favKirtan[i])
                                     ? IconButton(
                                         icon: Icon(Icons.favorite),
@@ -428,8 +497,14 @@ class _KirtanHomeState extends State<KirtanHome>
                                           save(list);
                                         },
                                       ),
-                                title: Text(favKirtan[i].artist),
-                                subtitle: Text(favKirtan[i].smaagam),
+                                title: Text(
+                                  favKirtan[i].artist,
+                                  textScaleFactor: 0.8,
+                                ),
+                                subtitle: Text(
+                                  favKirtan[i].smaagam,
+                                  textScaleFactor: 0.8,
+                                ),
                               ),
                             ),
                           ),
@@ -438,7 +513,6 @@ class _KirtanHomeState extends State<KirtanHome>
                     : Center(
                         child: Text('Nothing In Favorites'),
                       ),
-                Center(child: Text('Coming Soon ....')),
               ],
             ),
           ),
@@ -503,7 +577,8 @@ class _KirtanHomeState extends State<KirtanHome>
                         iconSize: 40,
                       ),
                       IconButton(
-                        icon: playerState == AudioPlayerState.PAUSED
+                        icon: playerState == AudioPlayerState.PAUSED ||
+                                playerState == AudioPlayerState.STOPPED
                             ? Icon(Icons.play_arrow)
                             : Icon(Icons.pause),
                         onPressed:
@@ -530,6 +605,17 @@ class _KirtanHomeState extends State<KirtanHome>
                                     });
                                   },
                         iconSize: 40,
+                      ),
+                      IconButton(
+                        iconSize: 40,
+                        icon: Icon(Icons.stop),
+                        onPressed: () {
+                          setState(() {
+                            playerState = AudioPlayerState.STOPPED;
+                            advancedPlayer.stop();
+                            MediaNotification.hideNotification();
+                          });
+                        },
                       ),
                       IconButton(
                         icon: Icon(Icons.skip_next),
