@@ -50,13 +50,16 @@ class _KirtanHomeState extends State<KirtanHome>
 
   String searchBy = 'All';
 
+
+  String domain = '';
+
   @override
   bool get wantKeepAlive => true;
 
   Future<void> loadMoreKirtan() async {
     curPage += 1;
     final response = await http
-        .get('https://akjm.herokuapp.com/kirtan/latest/?page=$curPage');
+        .get('$domain/kirtan/latest/?page=$curPage');
     setState(() {
       kirtan += parseKirtan(response.body);
     });
@@ -65,6 +68,12 @@ class _KirtanHomeState extends State<KirtanHome>
   @override
   void initState() {
     super.initState();
+
+    if (DateTime.now().day <= 15 ) {
+      domain = 'https://akjm.herokuapp.com';
+    } else {
+      domain = 'https://akj-server.herokuapp.com';
+    }
 
     _tabController = TabController(vsync: this, initialIndex: 0, length: 3);
 
@@ -168,12 +177,12 @@ class _KirtanHomeState extends State<KirtanHome>
   void submit(String searchValue) async {
     var url;
     if (searchBy == 'Smaagam') {
-      url = 'https://akjm.herokuapp.com/kirtan/smaagam/?search=$searchValue';
+      url = '$domain/kirtan/smaagam/?search=$searchValue';
     } else if (searchBy == 'All') {
-      url = 'https://akjm.herokuapp.com/api/kirtan/?search=$searchValue';
+      url = '$domain/api/kirtan/?search=$searchValue';
     }
      else {
-      url = 'https://akjm.herokuapp.com/kirtan/artist/?search=$searchValue';
+      url = '$domain/kirtan/artist/?search=$searchValue';
     }
 
     var response = get(url);
